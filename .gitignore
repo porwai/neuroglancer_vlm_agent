@@ -11,6 +11,7 @@ build/
 
 # Results (generated at runtime)
 results/
+explore_output/
 
 # Environment / secrets
 .env
@@ -25,5 +26,11 @@ Thumbs.db
 *.swp
 *.swo
 
+# Local ngllib clone (installed as editable pip package)
+neurogym/
+
 # ChromeDriver binaries
 chromedrivers/
+
+# ClaudeCode
+PLAN.md

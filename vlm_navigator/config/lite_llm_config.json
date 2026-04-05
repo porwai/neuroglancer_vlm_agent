@@ -1,0 +1,25 @@
+{                                                                                               
+    "models": {                                                                                 
+        "claude-sonnet": {                                                                      
+            "model": "anthropic/claude-sonnet-4-20250514",                                      
+            "api_key_env": "ANTHROPIC_API_KEY",           
+            "max_tokens": 300                                                                   
+        },                                                                                      
+        "gpt-4o": {                                                                             
+            "model": "gpt-4o",                                                                  
+            "api_key_env": "OPENAI_API_KEY",
+            "max_tokens": 300               
+        },                   
+        "gemini-flash": {                                                                       
+            "model": "gemini/gemini-2.0-flash",
+            "api_key_env": "GEMINI_API_KEY",                                                    
+            "max_tokens": 300               
+        }                                                                                       
+    },   
+    "episode": {                                                                                
+        "max_steps": 200,
+        "action_mode": "position_only",
+        "done_z": 6500,                
+        "render_wait": 0.5                                                                      
+    }                     
+}                                                                                               
