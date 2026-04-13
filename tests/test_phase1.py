@@ -94,11 +94,12 @@ def test_starting_positions():
     import os
     print("=== test_starting_positions ===")
 
-    path = os.path.join(os.path.dirname(__file__), "vlm_navigator", "config", "starting_positions.json")
+    _root = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+    path = os.path.join(_root, "vlm_navigator", "config", "starting_positions.json")
     with open(path) as f:
         positions = json.load(f)
 
-    assert len(positions) == 16, f"Expected 16 positions, got {len(positions)}"
+    assert len(positions) == 4, f"Expected 4 Low-Z benchmark positions, got {len(positions)}"
     for p in positions:
         assert all(k in p for k in ("id", "name", "x", "y", "z", "category")), f"Missing keys in {p}"
     print(f"  {len(positions)} positions loaded, all have required keys: OK")

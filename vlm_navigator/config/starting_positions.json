@@ -1,18 +1,6 @@
 [
-    {"id": 1,  "name": "Low-Z central",    "x": 143944, "y": 61076,  "z": 192,  "category": "Low-Z"},
-    {"id": 2,  "name": "Low-Z anterior",   "x": 120000, "y": 50000,  "z": 100,  "category": "Low-Z"},
-    {"id": 3,  "name": "Low-Z posterior",   "x": 170000, "y": 70000,  "z": 150,  "category": "Low-Z"},
-    {"id": 4,  "name": "Low-Z lateral-L",   "x": 100000, "y": 40000,  "z": 200,  "category": "Low-Z"},
-    {"id": 5,  "name": "Low-Z lateral-R",   "x": 180000, "y": 80000,  "z": 180,  "category": "Low-Z"},
-    {"id": 6,  "name": "Low-Z ventral",     "x": 150000, "y": 30000,  "z": 120,  "category": "Low-Z"},
-    {"id": 7,  "name": "Low-Z dorsal",      "x": 155000, "y": 90000,  "z": 160,  "category": "Low-Z"},
-    {"id": 8,  "name": "Mid-Z central",     "x": 143944, "y": 61076,  "z": 1500, "category": "Mid-Z"},
-    {"id": 9,  "name": "Mid-Z anterior",    "x": 125000, "y": 55000,  "z": 2000, "category": "Mid-Z"},
-    {"id": 10, "name": "Mid-Z posterior",    "x": 165000, "y": 65000,  "z": 1800, "category": "Mid-Z"},
-    {"id": 11, "name": "Mid-Z lateral",      "x": 110000, "y": 45000,  "z": 2500, "category": "Mid-Z"},
-    {"id": 12, "name": "High-Z start",       "x": 143944, "y": 61076,  "z": 3500, "category": "High-Z"},
-    {"id": 13, "name": "Near soma",           "x": 174232, "y": 68224,  "z": 3870, "category": "High-Z"},
-    {"id": 14, "name": "Edge-X low",          "x": 50000,  "y": 60000,  "z": 300,  "category": "Edge"},
-    {"id": 15, "name": "Edge-Y low",          "x": 140000, "y": 15000,  "z": 250,  "category": "Edge"},
-    {"id": 16, "name": "Random deep",         "x": 157510, "y": 42018,  "z": 4661, "category": "High-Z"}
+    {"id": 1, "name": "Original", "x": 143944, "y": 61076, "z": 192,  "category": "Low-Z", "segment_id": "720575940603464672"},
+    {"id": 2, "name": "SegB",     "x": 145597, "y": 64135, "z": 108,  "category": "Low-Z", "segment_id": "720575940615862389"},
+    {"id": 3, "name": "SegC",     "x": 143828, "y": 61503, "z": 117,  "category": "Low-Z", "segment_id": "720575940630914858"},
+    {"id": 4, "name": "SegD",     "x": 144623, "y": 59532, "z": 71,   "category": "Low-Z", "segment_id": "720575940623617973"}
 ]

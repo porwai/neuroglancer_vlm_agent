@@ -2,9 +2,9 @@
 Low-level 2D nerve visibility detection from Neuroglancer screenshots.
 
 This module only uses image heuristics on the left (2D) panel:
-- Detect green segmentation-like pixels
-- Remove mostly-static green UI artifacts using a per-episode static mask
-- Score dynamic green fraction and classify visibility
+- Detect any saturated (non-grey) segmentation overlay pixels
+- Remove mostly-static colored UI artifacts using a per-episode static mask
+- Score dynamic colored fraction and classify visibility
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from PIL import Image
 
 @dataclass(frozen=True)
 class VisibilityThresholds:
-    """Thresholds over dynamic green fraction in left panel."""
+    """Thresholds over dynamic colored fraction in left panel."""
 
     not_visible_max: float = 0.0012
     visible_min: float = 0.0030
@@ -37,12 +37,13 @@ def crop_left_panel(image_rgb: np.ndarray) -> np.ndarray:
     return image_rgb[:, : image_rgb.shape[1] // 2, :]
 
 
-def green_mask(left_panel_rgb: np.ndarray) -> np.ndarray:
+def colored_mask(left_panel_rgb: np.ndarray) -> np.ndarray:
     """
-    Detect green-ish segmentation overlay pixels.
+    Detect any saturated (non-grey) segmentation overlay pixels.
 
-    Uses an RGB dominance + saturation-style heuristic to capture overlay pixels
-    while rejecting most grayscale tissue/background pixels.
+    Rejects near-grey pixels (low chroma) that correspond to EM tissue,
+    background, and UI chrome. Captures any hue used by Neuroglancer
+    to color a segmentation overlay (green, cyan, orange, pink, etc.).
     """
     panel = left_panel_rgb.astype(np.int16)
     r = panel[..., 0]
@@ -50,8 +51,14 @@ def green_mask(left_panel_rgb: np.ndarray) -> np.ndarray:
     b = panel[..., 2]
     max_c = np.maximum(np.maximum(r, g), b)
     min_c = np.minimum(np.minimum(r, g), b)
-    sat_like = max_c - min_c
-    return (g > r + 20) & (g > b + 20) & (g > 90) & (sat_like > 35)
+    chroma = max_c - min_c          # 0 = pure grey, high = saturated
+    brightness = max_c
+    # Accept pixel if it has meaningful saturation and is not nearly black
+    return (chroma > 35) & (brightness > 60)
+
+
+# Keep old name as alias so existing callers don't break
+green_mask = colored_mask
 
 
 def build_static_mask(
@@ -59,16 +66,16 @@ def build_static_mask(
     freq_threshold: float = 0.9,
 ) -> np.ndarray:
     """
-    Build per-episode static mask from frequently-green pixels.
+    Build per-episode static mask from frequently-colored pixels.
 
-    Pixels green in >= freq_threshold fraction of frames are treated as static
+    Pixels colored in >= freq_threshold fraction of frames are treated as static
     UI/artifact pixels and removed from dynamic visibility scoring.
     """
     masks = []
     for path in image_paths:
         rgb = load_image_rgb(path)
         left = crop_left_panel(rgb)
-        masks.append(green_mask(left))
+        masks.append(colored_mask(left))
     if not masks:
         raise ValueError("No images provided for static-mask construction.")
     stacked = np.stack(masks, axis=0)
@@ -83,15 +90,18 @@ def visibility_score(
     Compute per-image visibility features from left panel.
 
     Returns:
-      - total_green_fraction
-      - dynamic_green_fraction
-      - total_green_pixels
-      - dynamic_green_pixels
+      - total_colored_fraction
+      - dynamic_colored_fraction
+      - total_colored_pixels
+      - dynamic_colored_pixels
       - left_panel_pixels
+
+    Legacy keys (dynamic_green_fraction etc.) are included for backwards
+    compatibility with existing log consumers.
     """
     rgb = load_image_rgb(image_path)
     left = crop_left_panel(rgb)
-    mask = green_mask(left)
+    mask = colored_mask(left)
     if static_mask is None:
         dynamic = mask
     else:
@@ -102,25 +112,30 @@ def visibility_score(
         dynamic = mask & (~static_mask)
 
     area = mask.size
-    total_green = int(mask.sum())
-    dynamic_green = int(dynamic.sum())
+    total_colored = int(mask.sum())
+    dynamic_colored = int(dynamic.sum())
     return {
-        "total_green_fraction": float(total_green / area),
-        "dynamic_green_fraction": float(dynamic_green / area),
-        "total_green_pixels": total_green,
-        "dynamic_green_pixels": dynamic_green,
+        "total_colored_fraction": float(total_colored / area),
+        "dynamic_colored_fraction": float(dynamic_colored / area),
+        "total_colored_pixels": total_colored,
+        "dynamic_colored_pixels": dynamic_colored,
         "left_panel_pixels": int(area),
+        # Legacy aliases
+        "total_green_fraction": float(total_colored / area),
+        "dynamic_green_fraction": float(dynamic_colored / area),
+        "total_green_pixels": total_colored,
+        "dynamic_green_pixels": dynamic_colored,
     }
 
 
 def classify_visibility(
-    dynamic_green_fraction: float,
+    dynamic_colored_fraction: float,
     thresholds: VisibilityThresholds = VisibilityThresholds(),
 ) -> str:
     """Classify visibility into not_visible / uncertain / visible."""
-    if dynamic_green_fraction < thresholds.not_visible_max:
+    if dynamic_colored_fraction < thresholds.not_visible_max:
         return "not_visible"
-    if dynamic_green_fraction >= thresholds.visible_min:
+    if dynamic_colored_fraction >= thresholds.visible_min:
         return "visible"
     return "uncertain"
 
@@ -159,8 +174,8 @@ def write_visibility_per_step_json(
           "step": 1,
           "image": "step_001.jpg",
           "label": "visible|uncertain|not_visible",
-          "dynamic_green_fraction": ...,
-          "total_green_fraction": ...,
+          "dynamic_colored_fraction": ...,
+          "total_colored_fraction": ...,
           ...
         }
       ]
@@ -177,7 +192,7 @@ def write_visibility_per_step_json(
         step_num = _step_number_from_name(image_path)
         score = visibility_score(image_path, static_mask=static_mask)
         label = classify_visibility(
-            score["dynamic_green_fraction"],
+            score["dynamic_colored_fraction"],
             thresholds=thresholds,
         )
         steps.append(
