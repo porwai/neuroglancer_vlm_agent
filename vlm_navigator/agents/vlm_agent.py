@@ -79,17 +79,10 @@ class VLMAgent:
         """
         self.step_count += 1
 
-        # Build the text portion of the user message
+        # Build the text portion of the user message.
+        # step_prompt_template is expected to be already fully formatted by the caller.
         if step_prompt_template:
-            step_text = step_prompt_template.format(
-                position=position,
-                orientation=orientation,
-                cross_section_scale=cross_section_scale,
-                projection_scale=projection_scale,
-                step=self.step_count,
-                prev_z_delta=prev_z_delta,
-                current_z=position[2],
-            )
+            step_text = step_prompt_template
         else:
             step_text = (
                 f"Step {self.step_count}. "
@@ -124,6 +117,7 @@ class VLMAgent:
             model=self.model,
             messages=self.messages,
             temperature=self.temperature,
+            timeout=60.0,
         )
         if is_reasoning:
             call_kwargs["max_completion_tokens"] = self.max_tokens

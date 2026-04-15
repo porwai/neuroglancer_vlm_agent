@@ -9,8 +9,8 @@ Usage:
     # Default: Claude Sonnet, position 1, 14 steps
     python run_manual_test.py
 
-    # GPT-4o, position 4 (SegD Low-Z), 20 steps
-    python run_manual_test.py --model gpt-4o --position 4 --steps 20
+    # GPT-4o, positions 3 and 4, 20 steps each
+    python run_manual_test.py --model gpt-4o --position 3 4 --steps 20
 
     # Slower EM tile load wait
     python run_manual_test.py --model gpt-5 --position 1 --steps 30 --post-step-delay 4.0
@@ -108,25 +108,27 @@ MODEL_PRESETS = {
         "max_tokens": 300,
         "temperature": 0.0,
     },
+    "gemini-pro": {
+        "model": "gemini/gemini-2.5-pro",
+        "max_tokens": 1024,
+        "temperature": 0.0,
+    },
 }
 
-SYSTEM_PROMPT = """You are navigating a 3D brain electron microscopy (EM) dataset in Neuroglancer.
-  The view shows a 2D cross-section (left panel) and a 3D projection (right panel).
+'''
+SYSTEM_PROMPT = """You  are navigating a 3D brain electron microscopy (EM) dataset in Neuroglancer to find the highest-Z tip of a specific neuron segment.
 
-  WHAT YOU SEE:
-  - Grey texture = raw EM brain tissue
-  - Colored overlay = segmented neuron (your target to follow)
-  - Black/empty = outside the dataset or no tissue at this position
+  PANELS:
+  - LEFT: 2D cross-section of current Z slice. Grey = raw EM tissue. Colored overlay = your target neuron segment. Crosshair = current position.
+  - RIGHT: 3D mesh projection of the neuron so far.
 
-  YOUR TASK: Follow the colored neuron segment through 3D space toward higher Z positions.
+  YOUR TASK: Reach the axon terminus — the highest Z position where the colored segment still exists. You are done when the segment disappears and cannot be recovered by x/y search.
 
   STRATEGY:
-  1. LOOK at the screenshot. Is colored neuron tissue visible?
-  2. If the neuron is clearly visible and roughly centered: advance with delta_z = 50-150. Only use smaller z steps (10-30) if the neuron is near the edge of the frame or looks like it's about to exit.
-  3. If the neuron is visible but off-center: make a BOLD x/y correction (250-1000 units)
+  1. Consult the 3D mesh (right panel) to understand where the nerve continues in 3D space and guide your x/y positioning.
+  2. As a general guide: off-center neuron → bold x/y correction (250-1000 units); centered neuron → advance z (50-150 units); no neuron → search x/y (250-2000 units) before retreating z.
   4. If NO visible neuron (black/empty): you overshot or drifted. DECREASE delta_z (go backward) or adjust x/y to find the neuron again
-  5. If the neuron shifts left/right/up/down between steps, compensate with x/y deltas
-
+  
   SCALE REFERENCE:
   - The 750nm scale bar in the bottom-left of the 2D panel is approximately 1/8th of the panel width.
   - x/y steps of 10-20 are almost invisible. Use 50-200 for meaningful repositioning.
@@ -148,6 +150,47 @@ SYSTEM_PROMPT = """You are navigating a 3D brain electron microscopy (EM) datase
   Respond with a brief observation (1 sentence) then ONLY a JSON object:
   {"delta_x": 0, "delta_y": 0, "delta_z": 50}
 """
+
+'''
+
+SYSTEM_PROMPT = """You  are navigating a 3D brain electron microscopy (EM) dataset in Neuroglancer to find the highest-Z tip of a specific neuron segment.
+
+  PANELS:
+  - LEFT: 2D cross-section of current Z slice. Grey = raw EM tissue. Colored overlay = your target neuron segment. Crosshair = current position.
+  - RIGHT: 3D mesh projection of the neuron so far.
+
+  YOUR TASK: Reach the axon terminus — the highest Z position where the colored segment still exists. You are done when the segment disappears and cannot be recovered by x/y search.
+
+  STRATEGY:
+  1. LOOK at the screenshot. Is colored neuron tissue visible?
+  2. If the neuron is clearly visible and roughly centered: advance with delta_z = 50-150. Only use smaller z steps (10-30) if the neuron is near the edge of the frame or looks like it's about to exit.
+  3. If the neuron is visible but off-center: make a BOLD x/y correction (250-1000 units)
+  4. If NO visible neuron (black/empty): you overshot or drifted. DECREASE delta_z (go backward) or adjust x/y to find the neuron again
+  5. If the neuron shifts left/right/up/down between steps, compensate with x/y deltas
+  6. Always consult the 3D mesh (right panel) to determine where the nerve continues in 3D space, and use this to guide your x/y positioning.
+  
+  SCALE REFERENCE:
+  - The 750nm scale bar in the bottom-left of the 2D panel is approximately 1/8th of the panel width.
+  - x/y steps of 10-20 are almost invisible. Use 50-200 for meaningful repositioning.
+  - z steps of 5-10 are wastefully small when the neuron is clearly visible. Default to 50+.
+
+  COORDINATE SYSTEM:
+  - Y-axis points DOWN — increasing delta_y moves the view downward on screen.
+  - To move toward something above centre, use a negative delta_y.
+  - To move toward something below centre, use a positive delta_y.
+
+  IMPORTANT:
+  - The neuron curves through 3D space — it won't stay at the same x,y as you change z
+  - Small z steps (10-30) are safer than large ones (50-100) when the neuron is near an edge
+  - Re-centering the neuron (x/y adjustment) is MORE important than z progress
+  - You may end the run early if you are confident further z-progress is impossible
+    (e.g. the nerve has been lost for multiple steps and x/y corrections have failed).
+    If ending, include "done": true in the same JSON object alongside the deltas.
+
+  Respond with a brief observation (1 sentence) then ONLY a JSON object:
+  {"delta_x": 0, "delta_y": 0, "delta_z": 50}
+"""
+
 
 STEP_PROMPT_TEMPLATE = (
     "Step {step}/{max_steps}. "
@@ -295,6 +338,12 @@ def run_manual_test(
         raise RuntimeError("get_JSON_state() returned empty/None while setting starting position")
     json_state = json.loads(state_str) if isinstance(state_str, str) else state_str
     json_state["position"] = [float(start_pos["x"]), float(start_pos["y"]), float(start_pos["z"])]
+    # Re-assert the correct segment — get_JSON_state() may return a stale browser state
+    # (e.g. from a previous run) that has the wrong segment active.
+    for layer in json_state.get("layers", []):
+        if layer.get("type") == "segmentation":
+            layer["segments"] = [effective_segment]
+            break
     env.change_JSON_state_url(json_state)
     time.sleep(5)
     env.prev_state, env.prev_json = env.prepare_state()
@@ -484,20 +533,20 @@ Examples:
   # Single run
   python run_manual_test.py --model gpt-5 --position 1
 
-  # Batch: all four segments, 3 trials each
-  python run_manual_test.py --model gpt-5 --positions 1 2 3 4 --trials 3
+  # Batch: positions 3 and 4, 2 trials each
+  python run_manual_test.py --model gpt-5 --position 3 4 --trials 2
 
   # Batch: all positions for a model
-  python run_manual_test.py --model claude-sonnet --positions all --trials 2
+  python run_manual_test.py --model claude-sonnet --position all --trials 2
 """,
     )
     parser.add_argument("--model", default="claude-sonnet", choices=list(MODEL_PRESETS.keys()))
-    parser.add_argument("--position", type=int, default=None, help="Single starting position ID")
     parser.add_argument(
-        "--positions",
+        "--position",
         nargs="+",
         metavar="POS",
-        help="One or more position IDs to run in sequence (use 'all' for every position). Overrides --position.",
+        default=None,
+        help="One or more starting position IDs (e.g. --position 3 4), or 'all'. Default: 1.",
     )
     parser.add_argument("--steps", type=int, default=14, help="Max steps per episode")
     parser.add_argument(
@@ -548,31 +597,38 @@ Examples:
     with open("vlm_navigator/config/starting_positions.json") as _f:
         _all_positions = [p["id"] for p in json.load(_f)]
 
-    if args.positions is not None:
-        if args.positions == ["all"]:
+    if args.position is not None:
+        if args.position == ["all"]:
             position_ids = _all_positions
         else:
-            position_ids = [int(p) for p in args.positions]
-    elif args.position is not None:
-        position_ids = [args.position]
+            position_ids = [int(p) for p in args.position]
     else:
         position_ids = [1]  # default
 
     total = len(position_ids) * args.trials
     done = 0
+    failed = 0
     for position_id in position_ids:
         for trial in range(1, args.trials + 1):
             done += 1
             print(f"\n[Batch {done}/{total}] position={position_id} trial={trial}")
-            run_manual_test(
-                model_name=args.model,
-                position_id=position_id,
-                max_steps=args.steps,
-                save_debug=args.debug,
-                stop_mode=args.stop_mode,
-                trial=trial,
-                min_steps_before_stop=args.min_steps_before_stop,
-                post_step_delay=args.post_step_delay,
-                run_id=args.run_id,
-                segment_id=resolved_segment,
-            )
+            try:
+                run_manual_test(
+                    model_name=args.model,
+                    position_id=position_id,
+                    max_steps=args.steps,
+                    save_debug=args.debug,
+                    stop_mode=args.stop_mode,
+                    trial=trial,
+                    min_steps_before_stop=args.min_steps_before_stop,
+                    post_step_delay=args.post_step_delay,
+                    run_id=args.run_id,
+                    segment_id=resolved_segment,
+                )
+            except Exception as e:
+                failed += 1
+                print(f"\n  [ERROR] position={position_id} trial={trial} failed: {e}")
+                print(f"  Continuing with remaining runs...\n")
+
+    if failed:
+        print(f"\n{failed}/{total} run(s) failed.")
